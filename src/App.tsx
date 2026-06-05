@@ -1,226 +1,167 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
-import { SECTIONS, MISSING_STICKERS, type Section } from './data/stickers';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { MISSING_STICKERS } from './data/stickers';
+import AlbumPage from './pages/AlbumPage';
+import StatsPage from './pages/StatsPage';
 
-type Filter = 'all' | 'collected' | 'missing';
+type Tab = 'album' | 'stats';
+
+export interface PackInfo {
+  count: number;
+  pricePerPack: number;
+  stickersPerPack: number;
+}
+
+export interface AppData {
+  version: 1;
+  collected: boolean[];
+  packs: PackInfo;
+}
 
 const TOTAL = 276;
 const STORAGE_KEY = 'reeperbahn-stickerheft';
+const DEFAULT_PACKS: PackInfo = { count: 0, pricePerPack: 1.0, stickersPerPack: 5 };
 
-function initCollected(): boolean[] {
+function buildInitial(): boolean[] {
+  const s = new Array(TOTAL + 1).fill(true);
+  MISSING_STICKERS.forEach(n => { s[n] = false; });
+  return s;
+}
+
+function initData(): AppData {
   try {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) {
-      const parsed = JSON.parse(saved) as boolean[];
-      if (Array.isArray(parsed) && parsed.length === TOTAL + 1) return parsed;
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) {
+      const p = JSON.parse(raw);
+      // backward compat: old format was raw boolean[]
+      if (Array.isArray(p)) {
+        return { version: 1, collected: p.length === TOTAL + 1 ? p : buildInitial(), packs: DEFAULT_PACKS };
+      }
+      const collected = Array.isArray(p.collected) && p.collected.length === TOTAL + 1
+        ? p.collected as boolean[]
+        : buildInitial();
+      return { version: 1, collected, packs: p.packs ?? DEFAULT_PACKS };
     }
   } catch { /* ignore */ }
-  const state = new Array(TOTAL + 1).fill(true);
-  MISSING_STICKERS.forEach(n => { state[n] = false; });
-  return state;
+  return { version: 1, collected: buildInitial(), packs: DEFAULT_PACKS };
 }
 
 export default function App() {
-  const [collected, setCollected] = useState<boolean[]>(initCollected);
-  const [filter, setFilter] = useState<Filter>('all');
-  const [importText, setImportText] = useState('');
-  const [showImport, setShowImport] = useState(false);
+  const [data, setData] = useState<AppData>(initData);
+  const [tab, setTab] = useState<Tab>('album');
+  const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(collected));
-  }, [collected]);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+  }, [data]);
 
-  const toggle = useCallback((num: number) => {
-    setCollected(prev => {
-      const next = [...prev];
+  const toggleSticker = useCallback((num: number) => {
+    setData(prev => {
+      const next = [...prev.collected];
       next[num] = !next[num];
-      return next;
+      return { ...prev, collected: next };
     });
   }, []);
 
-  const totalCollected = useMemo(
-    () => collected.slice(1, TOTAL + 1).filter(Boolean).length,
-    [collected]
-  );
-  const totalMissing = TOTAL - totalCollected;
-  const pct = Math.round((totalCollected / TOTAL) * 100);
-
-  const handleImport = () => {
-    const nums = importText
-      .split(/[\s,;]+/)
-      .map(n => parseInt(n.trim()))
-      .filter(n => !isNaN(n) && n >= 1 && n <= TOTAL);
-    if (!nums.length) return;
-    setCollected(prev => {
-      const next = [...prev];
-      nums.forEach(n => { next[n] = true; });
-      return next;
+  const markCollected = useCallback((nums: number[]) => {
+    setData(prev => {
+      const next = [...prev.collected];
+      nums.forEach(n => { if (n >= 1 && n <= TOTAL) next[n] = true; });
+      return { ...prev, collected: next };
     });
-    setImportText('');
-    setShowImport(false);
+  }, []);
+
+  const updatePacks = useCallback((packs: PackInfo) => {
+    setData(prev => ({ ...prev, packs }));
+  }, []);
+
+  const exportBackup = () => {
+    const payload = { ...data, savedAt: new Date().toISOString() };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `stickerheft-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   };
 
-  const missingList = useMemo(
-    () => Array.from({ length: TOTAL }, (_, i) => i + 1).filter(n => !collected[n]),
-    [collected]
+  const importBackup = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = evt => {
+      try {
+        const p = JSON.parse(evt.target?.result as string);
+        const collected = Array.isArray(p.collected) && p.collected.length === TOTAL + 1
+          ? (p.collected as boolean[])
+          : null;
+        if (!collected) { alert('Ungültige Backup-Datei'); return; }
+        setData({ version: 1, collected, packs: p.packs ?? DEFAULT_PACKS });
+      } catch { alert('Fehler beim Lesen der Backup-Datei'); }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  };
+
+  const totalCollected = useMemo(
+    () => data.collected.slice(1, TOTAL + 1).filter(Boolean).length,
+    [data.collected]
   );
+  const pct = Math.round((totalCollected / TOTAL) * 100);
 
   return (
     <div className="app">
-      {/* Sticky header */}
-      <header className="header">
-        <div className="header-inner">
-          {/* Title + stats */}
-          <div className="header-top">
-            <div>
-              <h1 className="album-title">400 Jahre Reeperbahn</h1>
-              <p className="album-subtitle">Stickeralbum · 276 Sticker</p>
-            </div>
-            <div className="stats-row">
-              <div className="stat">
-                <span className="stat-num collected-color">{totalCollected}</span>
-                <span className="stat-label">vorhanden</span>
-              </div>
-              <span className="stat-sep">·</span>
-              <div className="stat">
-                <span className="stat-num missing-color">{totalMissing}</span>
-                <span className="stat-label">fehlen</span>
-              </div>
-              <span className="stat-sep">·</span>
-              <div className="stat">
-                <span className="stat-num pct-color">{pct}%</span>
-                <span className="stat-label">komplett</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Progress bar */}
-          <div className="progress-track">
-            <div
-              className="progress-fill"
-              style={{ width: `${(totalCollected / TOTAL) * 100}%` }}
-            />
-          </div>
-
-          {/* Filter + import toggle */}
-          <div className="filter-row">
-            {(['all', 'collected', 'missing'] as Filter[]).map(f => (
-              <button
-                key={f}
-                onClick={() => setFilter(f)}
-                className={`filter-btn${filter === f ? ' active' : ''}`}
-              >
-                {f === 'all'
-                  ? `Alle (${TOTAL})`
-                  : f === 'collected'
-                  ? `✓ Vorhanden (${totalCollected})`
-                  : `✗ Fehlend (${totalMissing})`}
+      <nav className="top-nav">
+        <div className="nav-inner">
+          <div className="nav-left">
+            <span className="nav-brand">400 Jahre Reeperbahn</span>
+            <div className="nav-tabs">
+              <button className={`nav-tab${tab === 'album' ? ' active' : ''}`} onClick={() => setTab('album')}>
+                Album
               </button>
-            ))}
-            <button
-              onClick={() => setShowImport(v => !v)}
-              className="import-btn"
-            >
-              + Nummern eintragen
+              <button className={`nav-tab${tab === 'stats' ? ' active' : ''}`} onClick={() => setTab('stats')}>
+                Statistiken
+              </button>
+            </div>
+          </div>
+          <div className="nav-right">
+            <span className="nav-progress-text">
+              <strong>{totalCollected}</strong>/{TOTAL}
+              <span className="nav-pct"> {pct}%</span>
+            </span>
+            <button onClick={exportBackup} className="nav-backup-btn" title="Backup herunterladen">
+              &#8595; Backup
             </button>
+            <button onClick={() => fileRef.current?.click()} className="nav-backup-btn nav-restore-btn" title="Backup laden">
+              &#8593; Laden
+            </button>
+            <input ref={fileRef} type="file" accept=".json" onChange={importBackup} style={{ display: 'none' }} />
           </div>
-
-          {/* Bulk import */}
-          {showImport && (
-            <div className="import-row">
-              <input
-                autoFocus
-                type="text"
-                value={importText}
-                onChange={e => setImportText(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && handleImport()}
-                placeholder="z.B. 5, 10, 11, 27, 30 …"
-                className="import-input"
-              />
-              <button onClick={handleImport} className="import-confirm">
-                Als vorhanden markieren
-              </button>
-            </div>
-          )}
         </div>
-      </header>
+        <div className="nav-progress-bar">
+          <div className="nav-progress-fill" style={{ width: `${pct}%` }} />
+        </div>
+      </nav>
 
-      {/* Main content */}
-      <main className="main">
-        {SECTIONS.map(section => {
-          const nums = Array.from(
-            { length: section.end - section.start + 1 },
-            (_, i) => section.start + i
-          );
-          const visible = nums.filter(n =>
-            filter === 'collected' ? collected[n] :
-            filter === 'missing'   ? !collected[n] : true
-          );
-          if (!visible.length) return null;
-          const secCollected = nums.filter(n => collected[n]).length;
-
-          return (
-            <section key={section.id} className="album-section">
-              <div className="section-header">
-                <span
-                  className="section-bar"
-                  style={{ backgroundColor: section.color }}
-                />
-                <h2 className="section-title" style={{ color: section.color }}>
-                  {section.name}
-                </h2>
-                <span className="section-count">{secCollected}/{nums.length}</span>
-                <div className="section-line" />
-              </div>
-              <div className="sticker-grid">
-                {visible.map(num => (
-                  <StickerCard
-                    key={num}
-                    num={num}
-                    collected={collected[num]}
-                    section={section}
-                    onToggle={() => toggle(num)}
-                  />
-                ))}
-              </div>
-            </section>
-          );
-        })}
-
-        {/* Missing list */}
-        {totalMissing > 0 && (
-          <div className="missing-list">
-            <h3 className="missing-title">Fehlende Sticker ({totalMissing})</h3>
-            <p className="missing-numbers">{missingList.join(', ')}</p>
-          </div>
-        )}
-      </main>
-    </div>
-  );
-}
-
-interface StickerCardProps {
-  num: number;
-  collected: boolean;
-  section: Section;
-  onToggle: () => void;
-}
-
-function StickerCard({ num, collected, section, onToggle }: StickerCardProps) {
-  return (
-    <button
-      onClick={onToggle}
-      title={`#${num} – ${collected ? 'vorhanden (klicken zum Entfernen)' : 'fehlt (klicken zum Markieren)'}`}
-      className={`sticker-card${collected ? ' sticker-collected' : ' sticker-missing'}`}
-      style={collected ? {
-        backgroundColor: section.bg,
-        borderColor: section.color + 'AA',
-        color: section.color,
-      } : undefined}
-    >
-      <span className="sticker-num">{num}</span>
-      {collected && (
-        <span className="sticker-check" style={{ color: section.color }}>✓</span>
+      {tab === 'album' ? (
+        <AlbumPage
+          collected={data.collected}
+          total={TOTAL}
+          totalCollected={totalCollected}
+          onToggle={toggleSticker}
+          onBulkMark={markCollected}
+        />
+      ) : (
+        <StatsPage
+          collected={data.collected}
+          total={TOTAL}
+          totalCollected={totalCollected}
+          packs={data.packs}
+          onPacksChange={updatePacks}
+        />
       )}
-    </button>
+    </div>
   );
 }
