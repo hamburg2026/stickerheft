@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { SECTIONS, type Section } from '../data/stickers';
 
 type Filter = 'all' | 'collected' | 'missing';
@@ -15,7 +15,15 @@ export default function AlbumPage({ collected, total, totalCollected, onToggle, 
   const [filter, setFilter] = useState<Filter>('all');
   const [importText, setImportText] = useState('');
   const [showImport, setShowImport] = useState(false);
+  const [zoomImage, setZoomImage] = useState<{ src: string; title: string } | null>(null);
   const totalMissing = total - totalCollected;
+
+  useEffect(() => {
+    if (!zoomImage) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setZoomImage(null); };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [zoomImage]);
 
   const handleImport = () => {
     const nums = importText
@@ -86,17 +94,21 @@ export default function AlbumPage({ collected, total, totalCollected, onToggle, 
           );
           if (!visible.length) return null;
           const secCollected = nums.filter(n => collected[n]).length;
+          const imgSrc = `${import.meta.env.BASE_URL}images/${section.image}`;
 
           return (
             <section key={section.id} className="album-section">
               <div
-                className="section-header"
-                style={{ backgroundImage: `url(${import.meta.env.BASE_URL}images/${section.image})` }}
+                className="section-header section-header-zoomable"
+                style={{ backgroundImage: `url(${imgSrc})` }}
+                onClick={() => setZoomImage({ src: imgSrc, title: section.name })}
+                title="Foto vergrößern"
               >
                 <span className="section-bar" style={{ backgroundColor: section.color }} />
                 <h2 className="section-title" style={{ color: section.color }}>{section.name}</h2>
                 <span className="section-count">{secCollected}/{nums.length}</span>
                 <div className="section-line" />
+                <span className="section-zoom-icon">&#128269;</span>
               </div>
               <div className="sticker-grid">
                 {visible.map(num => (
@@ -120,6 +132,16 @@ export default function AlbumPage({ collected, total, totalCollected, onToggle, 
           </div>
         )}
       </main>
+
+      {zoomImage && (
+        <div className="lightbox-overlay" onClick={() => setZoomImage(null)}>
+          <div className="lightbox-box" onClick={e => e.stopPropagation()}>
+            <button className="lightbox-close" onClick={() => setZoomImage(null)}>✕</button>
+            <img src={zoomImage.src} alt={zoomImage.title} className="lightbox-img" />
+            <p className="lightbox-caption">{zoomImage.title}</p>
+          </div>
+        </div>
+      )}
     </>
   );
 }
