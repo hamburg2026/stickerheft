@@ -89,7 +89,10 @@ export default function AlbumPage({ collected, total, totalCollected, onToggle, 
 
           return (
             <section key={section.id} className="album-section">
-              <div className="section-header">
+              <div
+                className="section-header"
+                style={{ backgroundImage: `url(${import.meta.env.BASE_URL}images/${section.image})` }}
+              >
                 <span className="section-bar" style={{ backgroundColor: section.color }} />
                 <h2 className="section-title" style={{ color: section.color }}>{section.name}</h2>
                 <span className="section-count">{secCollected}/{nums.length}</span>

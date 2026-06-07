@@ -187,16 +187,43 @@ body {
 
 /* ── Album sections ──────────────────────────────────────────────────────── */
 
+.album-section {
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid #1e293b;
+  background: #080d1a;
+}
+
 .section-header {
+  position: relative;
+  padding: 11px 14px 10px;
+  background-size: cover;
+  background-position: center 40%;
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-bottom: 10px;
+  min-height: 48px;
 }
-.section-bar  { width: 4px; height: 20px; border-radius: 2px; flex-shrink: 0; }
-.section-title { font-size: 13px; font-weight: 700; line-height: 1; }
-.section-count { font-size: 11px; color: #4b5563; white-space: nowrap; }
-.section-line  { flex: 1; height: 1px; background: #1f2937; }
+
+/* dark overlay so text is always readable */
+.section-header::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to right, rgba(3,7,18,.88) 55%, rgba(3,7,18,.72));
+}
+
+/* all direct children float above the overlay */
+.section-header > * { position: relative; z-index: 1; }
+
+.section-bar   { width: 4px; height: 20px; border-radius: 2px; flex-shrink: 0; }
+.section-title { font-size: 13px; font-weight: 700; line-height: 1; text-shadow: 0 1px 3px rgba(0,0,0,.8); }
+.section-count { font-size: 11px; color: #94a3b8; white-space: nowrap; }
+.section-line  { flex: 1; height: 1px; background: rgba(255,255,255,.08); }
+
+.sticker-grid {
+  padding: 10px 10px 12px;
+}
 
 /* ── Sticker grid ────────────────────────────────────────────────────────── */
 
